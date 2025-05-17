@@ -79,8 +79,16 @@ func isThirdPartyWaiting(ctx context.Context, msComm *pb.MicroserviceCommunicati
 
 		msComm.RequestMetadata.DestinationQueue = returnAddress
 
-		c.SendMicroserviceComm(ctx, msComm)
+		// mutant 1
+		// msComm.Result = nil
+		// msComm.Data = nil
 
+		c.SendMicroserviceComm(ctx, msComm)
+		
+		ttpMutex.Lock()
+		delete(thirdPartyMap, correlationId)
+		ttpMutex.Unlock()
+	
 		// logger.Debug("returning from forwarding to 3rd party......")
 		return true
 	}

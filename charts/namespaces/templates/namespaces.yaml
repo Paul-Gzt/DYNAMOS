@@ -36,6 +36,29 @@ data:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name:  tester
+  annotations:
+    "helm.sh/resource-policy": keep
+    "linkerd.io/inject" : enabled
+    "config.linkerd.io/trace-collector": collector.linkerd-jaeger:55678 # or 14268?
+
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rabbit
+  namespace: tester
+type: Opaque
+data:
+  password: {{ .Values.secret.password | b64enc | quote }}
+
+---
+
+apiVersion: v1
+kind: Namespace
+metadata:
   name: uva
   annotations:
     "helm.sh/resource-policy": keep

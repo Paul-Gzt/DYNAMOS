@@ -124,7 +124,7 @@ func (s *serverInstance) Consume(in *pb.ConsumeRequest, stream pb.RabbitMQ_Consu
 			}
 		case "compositionRequest":
 			if err := s.handleCompositionRequestResponse(msg, stream); err != nil {
-				logger.Sugar().Errorf("Error handling validation response: %v", err)
+				logger.Sugar().Errorf("Error handling compositionRequest response: %v", err)
 				return status.Error(codes.Internal, err.Error())
 			}
 		case "sqlDataRequest":

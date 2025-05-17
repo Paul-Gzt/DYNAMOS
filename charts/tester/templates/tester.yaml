@@ -2,22 +2,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: policy-enforcer
+  name: tester
   namespace: {{ .Values.Namespace }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: policy-enforcer
+      app: tester
   template:
     metadata:
       labels:
-        app: policy-enforcer
+        app: tester
     spec:
       containers:
-      - name: policy-enforcer
-        image: {{ .Values.dockerArtifactAccount }}/policy-enforcer:{{ .Values.branchNameTag }}
+      - name: tester
+        image: {{ .Values.dockerArtifactAccount }}/tester:{{ .Values.branchNameTag }}
         imagePullPolicy: Never
+        tty: True
+        stdin: True
         env:
         - name: OC_AGENT_HOST
           value: {{ .Values.tracingEndpoint }}

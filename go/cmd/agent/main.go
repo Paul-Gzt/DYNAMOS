@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
+	"sync"
 
 	"github.com/Jorrit05/DYNAMOS/pkg/api"
 	"github.com/Jorrit05/DYNAMOS/pkg/etcd"

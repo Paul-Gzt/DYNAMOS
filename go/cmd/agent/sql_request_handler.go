@@ -125,11 +125,66 @@ func sqlDataRequestHandler() http.HandlerFunc {
 	}
 }
 
-// handleSqlAll means we do all work for this request, not third part involved (computeToData archeType)
-func handleSqlAll(ctx context.Context, jobName string, compositionRequest *pb.CompositionRequest, sqlDataRequest *pb.SqlDataRequest, correlationId string) (context.Context, error) {
-	// Create msChain and deploy job.
+func handleSqlDataRequest(ctx context.Context, grpcMsg *pb.SideCarMessage) error {
+	logger.Debug("Start handleSqlDataRequest")
 
-	ctx, span := trace.StartSpan(ctx, serviceName+"/func: handleSqlAll")
+	sqlDataRequest := &pb.SqlDataRequest{}
+
+	if err := grpcMsg.Body.UnmarshalTo(sqlDataRequest); err != nil {
+		logger.Sugar().Errorf("Failed to unmarshal sqlDataRequest message: %v", err)
+	}
+
+	compositionRequest, err := getCompositionRequest(sqlDataRequest.User.UserName, sqlDataRequest.RequestMetadata.JobId)
+
+	if err != nil {
+		logger.Sugar().Errorf("Error getting matching composition request: %v", err)
+		return err
+	}
+
+
+	// Store the request information in the map
+	correlationId := sqlDataRequest.RequestMetadata.CorrelationId
+	if correlationId == "" {
+		correlationId = uuid.New().String()
+		
+		// mutant 3
+		// correlationId = "mutant"
+	}
+
+
+	ttpMutex.Lock()
+	thirdPartyMap[correlationId] = sqlDataRequest.RequestMetadata.ReturnAddress
+	ttpMutex.Unlock()
+
+	// Switch on the role we have in this data request
+	if strings.EqualFold(compositionRequest.Role, "computeProvider") {
+		ctx, err = handleSqlComputeProvider(ctx, compositionRequest.LocalJobName, compositionRequest, sqlDataRequest, correlationId)
+		if err != nil {
+			logger.Sugar().Errorf("Error in computeProvider role: %v", err)
+			return err
+		}
+	} else if strings.EqualFold(compositionRequest.Role, "dataProvider") {
+		ctx, err = handleSqlDataProvider(ctx, compositionRequest.LocalJobName, compositionRequest, sqlDataRequest, correlationId)
+		if err != nil {
+			logger.Sugar().Errorf("Error in dataProvider role: %v", err)
+			return err
+		}
+	} else if strings.EqualFold(compositionRequest.Role, "all") {
+		ctx, err = handleSqlAll(ctx, compositionRequest.LocalJobName, compositionRequest, sqlDataRequest, correlationId)
+		if err != nil {
+			logger.Sugar().Errorf("Error in all role: %v", err)
+			return err
+		}
+	} else {
+		logger.Sugar().Warnf("Unknown role: %s", compositionRequest.Role)
+	}
+
+	return nil
+}
+
+func handleSqlDataProvider(ctx context.Context, jobName string, compositionRequest *pb.CompositionRequest, sqlDataRequest *pb.SqlDataRequest, correlationId string) (context.Context, error) {
+	// Create msChain and deploy job.
+	ctx, span := trace.StartSpan(ctx, serviceName+"/func: handleSqlDataProvider")
 	defer span.End()
 
 	var err error
@@ -138,6 +193,43 @@ func handleSqlAll(ctx context.Context, jobName string, compositionRequest *pb.Co
 		logger.Sugar().Errorf("error deploying job: %v", err)
 		return ctx, err
 	}
+
+	msComm := &pb.MicroserviceCommunication{}
+	msComm.RequestMetadata = &pb.RequestMetadata{}
+	msComm.Type = "microserviceCommunication"
+	msComm.RequestType = compositionRequest.RequestType
+	msComm.RequestMetadata.DestinationQueue = jobName
+	msComm.RequestMetadata.ReturnAddress = agentConfig.RoutingKey
+
+	any, err := anypb.New(sqlDataRequest)
+	if err != nil {
+		logger.Sugar().Error(err)
+		return ctx, err
+	}
+
+	msComm.OriginalRequest = any
+	msComm.RequestMetadata.CorrelationId = correlationId
+
+	logger.Sugar().Debugf("Sending SendMicroserviceInput to: %s", jobName)
+
+	key := fmt.Sprintf("/agents/jobs/%s/queueInfo/%s", serviceName, jobName)
+	err = etcd.PutEtcdWithGrant(ctx, etcdClient, key, jobName, queueDeleteAfter)
+	if err != nil {
+		logger.Sugar().Errorf("Error PutEtcdWithGrant: %v", err)
+	}
+
+	c.SendMicroserviceComm(ctx, msComm)
+	return ctx, nil
+}
+
+// handleSqlAll means we do all work for this request, not third part involved (computeToData archeType)
+func handleSqlAll(ctx context.Context, jobName string, compositionRequest *pb.CompositionRequest, sqlDataRequest *pb.SqlDataRequest, correlationId string) (context.Context, error) {
+	// Create msChain and deploy job.
+
+	ctx, span := trace.StartSpan(ctx, serviceName+"/func: handleSqlAll")
+	defer span.End()
+
+	var err error
 
 	msComm := &pb.MicroserviceCommunication{}
 	msComm.RequestMetadata = &pb.RequestMetadata{}
@@ -154,6 +246,16 @@ func handleSqlAll(ctx context.Context, jobName string, compositionRequest *pb.Co
 
 	msComm.OriginalRequest = any
 	msComm.RequestMetadata.CorrelationId = correlationId
+
+	if correlationId == "mocked-job-chain" {
+		msComm.RequestMetadata.DestinationQueue = "tester-in"
+	} else {
+		ctx, _, err = generateChainAndDeploy(ctx, compositionRequest, jobName, sqlDataRequest.Options)
+		if err != nil {
+			logger.Sugar().Errorf("error deploying job: %v", err)
+			return ctx, err
+		}
+	}
 
 	logger.Sugar().Debugf("Sending SendMicroserviceInput to: %s", jobName)
 
@@ -188,6 +290,10 @@ func handleSqlComputeProvider(ctx context.Context, jobName string, compositionRe
 		}
 
 		sqlDataRequest.RequestMetadata.DestinationQueue = agentData.RoutingKey
+
+		// TODO: DIRTY HACK
+		sqlDataRequest.RequestMetadata.DestinationQueue = "tester-in"
+		logger.Sugar().Debugf("performing the dirty hack")
 
 		// This is a bit confusing, but it tells the other agent to go back here.
 		// The other agent, will reset the address to get the message from the job.

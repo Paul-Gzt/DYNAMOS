@@ -66,6 +66,11 @@ func NewConfiguration(
 	if err != nil {
 		return nil, fmt.Errorf("error determining last service: %w", err)
 	}
+	
+	//testingJob, err := strconv.ParseBool(os.Getenv("TESTING_JOB"))
+	//if err != nil {
+	//	return nil, fmt.Errorf("error determining testing job: %w", err)
+	//}
 
 	jobName := os.Getenv("JOB_NAME")
 	if jobName == "" {

@@ -88,11 +88,18 @@ func handleSqlDataRequest(ctx context.Context, msComm *pb.MicroserviceCommunicat
 		return nil
 	}
 
+
 	if sqlDataRequest.Algorithm == "average" {
 		// jsonString, _ := json.Marshal(msComm.Data)
 		// msComm.Result = jsonString
+	
+		// mutant 4
+		// return nil
 
 		msComm.Result = getAverage(msComm.Data)
+		msComm.Metadata = nil // data doesn't need to be preserved once processed
+		msComm.Data = nil // data doesn't need to be preserved once processed
+		logger.Sugar().Debugf("Result %s", string(msComm.Result))
 		return nil
 	}
 

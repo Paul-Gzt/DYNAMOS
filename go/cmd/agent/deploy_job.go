@@ -22,6 +22,9 @@ func generateChainAndDeploy(ctx context.Context, compositionRequest *pb.Composit
 	ctx, span := trace.StartSpan(ctx, serviceName+"/func: generateChainAndDeploy")
 	defer span.End()
 
+	// mutant 4
+	// return ctx, nil, nil
+
 	msChain, err := generateMicroserviceChain(compositionRequest, options)
 	if err != nil {
 		logger.Sugar().Errorf("Error generating microservice chain %v", err)
@@ -86,6 +89,9 @@ func deployJob(ctx context.Context, msChain []mschain.MicroserviceMetadata, jobN
 		nr_of_data_providers = len(compositionRequest.DataProviders)
 	}
 
+	// testing job? TODO
+	testingJob := compositionRequest.DestinationQueue == "tester-in"
+
 	for i, microservice := range msChain {
 		port++
 
@@ -93,13 +99,18 @@ func deployJob(ctx context.Context, msChain []mschain.MicroserviceMetadata, jobN
 			lastService = "1"
 		}
 
-		logger.Sugar().Debugw("job info:", "name: ", microservice.Name, "Port: ", port)
+		logger.Sugar().Debugw("job info:", "name: ", microservice.Name, "Port: ", port, "i: ", i)
 
 		microserviceTag := getMicroserviceTag(microservice.Name)
 
 		repositoryName := os.Getenv("MICROSERVICE_REPOSITORY_NAME")
 		if repositoryName == "" {
-			repositoryName = "dynamos1"
+			repositoryName = "paulgzt"
+
+			// TODO building own sql-query requires problem solving
+			if microservice.Name == "sql-query" {
+				repositoryName = "dynamos1"
+			}
 		}
 
 		fullImage := fmt.Sprintf("%s/%s:%s", repositoryName, microservice.Name, microserviceTag)
@@ -119,6 +130,7 @@ func deployJob(ctx context.Context, msChain []mschain.MicroserviceMetadata, jobN
 				{Name: "SIDECAR_PORT", Value: strconv.Itoa(firstPortMicroservice - 1)},
 				{Name: "OC_AGENT_HOST", Value: tracingHost},
 				{Name: "NR_OF_DATA_PROVIDERS", Value: strconv.Itoa(nr_of_data_providers)},
+				{Name: "TESTING_JOB", Value: strconv.FormatBool(testingJob)},
 			},
 			// Add additional container configuration here as needed
 		}
@@ -152,7 +164,7 @@ func addSidecar() v1.Container {
 
 	repositoryName := os.Getenv("SIDECAR_REPOSITORY_NAME")
 	if repositoryName == "" {
-		repositoryName = "dynamos1"
+		repositoryName = "paulgzt"
 	}
 
 	sidecarTag := getMicroserviceTag(sidecarName)
